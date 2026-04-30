@@ -1,0 +1,89 @@
+import React, { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+
+const roles = ["Chef", "Support"];
+
+export default function Scheduler() {
+  const [resources, setResources] = useState([]);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("Chef");
+  const [schedule, setSchedule] = useState({});
+
+  const addResource = () => {
+    if (!name) return;
+    setResources([...resources, { name, role }]);
+    setName("");
+  };
+
+  const assignShift = (day, slot, person) => {
+    const key = `${day}-${slot}`;
+    setSchedule({ ...schedule, [key]: person });
+  };
+
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const slots = ["10-2", "2-6", "6-10"];
+
+  return (
+    <div className="p-6 grid gap-6">
+      <Card className="p-4">
+        <h2 className="text-xl font-bold">Add Staff</h2>
+        <div className="flex gap-2 mt-2">
+          <input
+            className="border p-2"
+            placeholder="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <select
+            className="border p-2"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+          >
+            {roles.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+          <Button onClick={addResource}>Add</Button>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h2 className="text-xl font-bold">Shift Planner</h2>
+        <div className="grid grid-cols-4 gap-4 mt-4">
+          <div></div>
+          {slots.map((slot) => (
+            <div key={slot} className="font-bold text-center">
+              {slot}
+            </div>
+          ))}
+
+          {days.map((day) => (
+            <React.Fragment key={day}>
+              <div className="font-bold">{day}</div>
+              {slots.map((slot) => {
+                const key = `${day}-${slot}`;
+                return (
+                  <div key={key} className="border p-2">
+                    <select
+                      className="w-full"
+                      value={schedule[key] || ""}
+                      onChange={(e) => assignShift(day, slot, e.target.value)}
+                    >
+                      <option value="">-- Assign --</option>
+                      {resources.map((r) => (
+                        <option key={r.name} value={r.name}>
+                          {r.name} ({r.role})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
