@@ -1,7 +1,18 @@
 "use client";
-import React, { createContext, useContext, useReducer, useEffect } from "react";
+import React, { createContext, useContext, useReducer, useEffect, useState, useCallback, useRef } from "react";
 import { AppData, Staff, Shift, KitchenSettings, Break } from "@/types";
 import { STAFF_COLORS, DEFAULT_KITCHEN_SETTINGS } from "./constants";
+import {
+  SyncConfig,
+  SyncStatus,
+  loadSyncConfig,
+  saveSyncConfig,
+  clearSyncConfig,
+  loadFromGist,
+  saveToGist,
+  createGist,
+  findKitchenGist,
+} from "./gistSync";
 
 const defaultData: AppData = {
   kitchenSettings: DEFAULT_KITCHEN_SETTINGS as KitchenSettings,
@@ -95,25 +106,145 @@ function reducer(state: AppData, action: Action): AppData {
   }
 }
 
-const AppContext = createContext<{ state: AppData; dispatch: React.Dispatch<Action> } | null>(null);
+type AppContextValue = {
+  state: AppData;
+  dispatch: React.Dispatch<Action>;
+  syncStatus: SyncStatus;
+  syncConfig: SyncConfig | null;
+  connectSync: (token: string) => Promise<{ ok: boolean; error?: string }>;
+  disconnectSync: () => void;
+};
+
+const AppContext = createContext<AppContextValue | null>(null);
+
+const DEBOUNCE_MS = 2000;
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, defaultData);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncConfig, setSyncConfigState] = useState<SyncConfig | null>(null);
+
+  // Keep a ref to the latest state so the debounced save can use it
+  const stateRef = useRef(state);
+  const syncConfigRef = useRef(syncConfig);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("shiftScheduler");
-      if (saved) dispatch({ type: "LOAD", payload: JSON.parse(saved) });
-    } catch {
-      // ignore parse errors
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("shiftScheduler", JSON.stringify(state));
+    stateRef.current = state;
   }, [state]);
 
-  return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
+  useEffect(() => {
+    syncConfigRef.current = syncConfig;
+  }, [syncConfig]);
+
+  // Load data on mount
+  useEffect(() => {
+    async function init() {
+      const cfg = loadSyncConfig();
+      if (cfg?.token) {
+        setSyncStatus("loading");
+        let gistId = cfg.gistId;
+        if (!gistId) {
+          gistId = await findKitchenGist(cfg.token);
+          if (gistId) {
+            const updated = { ...cfg, gistId };
+            saveSyncConfig(updated);
+            setSyncConfigState(updated);
+          } else {
+            setSyncConfigState(cfg);
+          }
+        } else {
+          setSyncConfigState(cfg);
+        }
+
+        if (gistId) {
+          const data = await loadFromGist(cfg.token, gistId);
+          if (data) {
+            dispatch({ type: "LOAD", payload: data as AppData });
+            setSyncStatus("saved");
+            initializedRef.current = true;
+            return;
+          }
+        }
+        setSyncStatus("idle");
+      }
+
+      // Fallback to localStorage
+      try {
+        const saved = localStorage.getItem("shiftScheduler");
+        if (saved) dispatch({ type: "LOAD", payload: JSON.parse(saved) });
+      } catch {
+        // ignore parse errors
+      }
+      initializedRef.current = true;
+    }
+    // Run once on mount only
+    init();
+  }, []);
+
+  // Save to localStorage + debounced Gist save on every state change
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    localStorage.setItem("shiftScheduler", JSON.stringify(state));
+
+    const cfg = syncConfigRef.current;
+    if (!cfg?.token || !cfg?.gistId) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSyncStatus("saving");
+    saveTimerRef.current = setTimeout(async () => {
+      const ok = await saveToGist(cfg.token, cfg.gistId!, stateRef.current);
+      setSyncStatus(ok ? "saved" : "error");
+    }, DEBOUNCE_MS);
+  }, [state]);
+
+  const connectSync = useCallback(async (token: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!token.trim()) return { ok: false, error: "Token is required." };
+    setSyncStatus("loading");
+
+    // Verify token by hitting /user
+    const testRes = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `token ${token}`, Accept: "application/vnd.github.v3+json" },
+    });
+    if (!testRes.ok) {
+      setSyncStatus("error");
+      return { ok: false, error: "Invalid token. Make sure it has the 'gist' scope." };
+    }
+
+    // Look for an existing Gist first
+    let gistId = await findKitchenGist(token);
+    if (gistId) {
+      // Load existing data from the found Gist
+      const data = await loadFromGist(token, gistId);
+      if (data) dispatch({ type: "LOAD", payload: data as AppData });
+    } else {
+      // Create a new Gist with current data
+      gistId = await createGist(token, stateRef.current);
+      if (!gistId) {
+        setSyncStatus("error");
+        return { ok: false, error: "Failed to create Gist. Check your token permissions." };
+      }
+    }
+
+    const cfg: SyncConfig = { token, gistId };
+    saveSyncConfig(cfg);
+    setSyncConfigState(cfg);
+    setSyncStatus("saved");
+    return { ok: true };
+  }, []);
+
+  const disconnectSync = useCallback(() => {
+    clearSyncConfig();
+    setSyncConfigState(null);
+    setSyncStatus("idle");
+  }, []);
+
+  return (
+    <AppContext.Provider value={{ state, dispatch, syncStatus, syncConfig, connectSync, disconnectSync }}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useApp() {
