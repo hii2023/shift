@@ -2,16 +2,16 @@
 import { useEffect, useState } from "react";
 
 export default function LiveClock() {
-  const [time, setTime] = useState("");
+  const [time, setTime] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  );
 
   useEffect(() => {
     const tick = () => {
-      const now = new Date();
       setTime(
-        now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+        new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
       );
     };
-    tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
