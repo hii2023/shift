@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Plus, Trash2, Coffee, X } from "lucide-react";
+import { AlertTriangle, Plus, Trash2, Coffee, X, Pencil } from "lucide-react";
 
 const CELL_WIDTH = 80; // pixels per hour
 const ROW_HEIGHT = 60;
@@ -484,7 +484,7 @@ export default function SchedulerView() {
                               setTimeout(() => openEditBreak(currentEditShift.id, brk), 100);
                             }}
                           >
-                            ✏️
+                            <Pencil className="w-3 h-3" />
                           </Button>
                           <Button
                             variant="ghost"
