@@ -20,7 +20,8 @@ type Action =
   | { type: "DELETE_SHIFT"; payload: string }
   | { type: "ADD_BREAK"; payload: { shiftId: string; brk: Omit<Break, "id"> } }
   | { type: "UPDATE_BREAK"; payload: { shiftId: string; brk: Break } }
-  | { type: "DELETE_BREAK"; payload: { shiftId: string; breakId: string } };
+  | { type: "DELETE_BREAK"; payload: { shiftId: string; breakId: string } }
+  | { type: "COPY_DAY"; payload: { targetDays: string[]; sourceShifts: Shift[] } };
 
 function reducer(state: AppData, action: Action): AppData {
   switch (action.type) {
@@ -75,6 +76,19 @@ function reducer(state: AppData, action: Action): AppData {
           s.id === shiftId ? { ...s, breaks: s.breaks.filter((b) => b.id !== breakId) } : s
         ),
       };
+    }
+    case "COPY_DAY": {
+      const { targetDays, sourceShifts } = action.payload;
+      const remaining = state.shifts.filter((s) => !targetDays.includes(s.day));
+      const copies = targetDays.flatMap((day) =>
+        sourceShifts.map((s) => ({
+          ...s,
+          id: crypto.randomUUID(),
+          day,
+          breaks: s.breaks.map((b) => ({ ...b, id: crypto.randomUUID() })),
+        }))
+      );
+      return { ...state, shifts: [...remaining, ...copies] };
     }
     default:
       return state;

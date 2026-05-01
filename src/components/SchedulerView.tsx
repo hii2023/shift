@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useApp } from "@/lib/store";
 import { Shift, Break, KitchenSettings } from "@/types";
 import { DAYS } from "@/lib/constants";
@@ -10,10 +10,27 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Plus, Trash2, Coffee, X, Pencil } from "lucide-react";
+import { AlertTriangle, Plus, Trash2, Coffee, X, Pencil, Copy, Clock } from "lucide-react";
 
 const CELL_WIDTH = 80; // pixels per hour
 const ROW_HEIGHT = 60;
+const SNAP_MINUTES = 15;
+
+type DragState = {
+  type: "shift-move" | "shift-resize" | "break-move";
+  shiftId: string;
+  breakId?: string;
+  startX: number;
+  origStartMin: number;
+  origEndMin: number;
+} | null;
+
+type DragPreview = {
+  shiftId: string;
+  breakId?: string;
+  newStartMin: number;
+  newEndMin: number;
+} | null;
 
 export default function SchedulerView() {
   const { state, dispatch } = useApp();
@@ -21,16 +38,140 @@ export default function SchedulerView() {
 
   const [selectedDay, setSelectedDay] = useState("Mon");
   const [roleFilter, setRoleFilter] = useState<string>("All");
+  const [now, setNow] = useState(() => new Date());
 
   const [shiftDialog, setShiftDialog] = useState<{ open: boolean; shift?: Shift }>({ open: false });
   const [breakDialog, setBreakDialog] = useState<{ open: boolean; shiftId?: string; brk?: Break }>({
     open: false,
   });
-
   const [shiftForm, setShiftForm] = useState({ staffId: "", startTime: "10:00", endTime: "14:00" });
   const [breakForm, setBreakForm] = useState({ startTime: "12:00", endTime: "13:00" });
 
+  // Drag refs — kept as refs so global event handlers don't need to be recreated
+  const dragRef = useRef<DragState>(null);
+  const hasMoved = useRef(false);
+  const [dragPreview, setDragPreview] = useState<DragPreview>(null);
+  const dragPreviewRef = useRef<DragPreview>(null);
+
+  // Stable value refs for use inside event handlers
+  const openMinutesRef = useRef(0);
+  const closeMinutesRef = useRef(0);
+  const totalMinutesRef = useRef(0);
+  const totalHoursRef = useRef(0);
+  const shiftsRef = useRef(shifts);
+
   const daySettings = kitchenSettings[selectedDay] || { enabled: true, open: "10:00", close: "22:00" };
+  const openMinutes = timeToMinutes(daySettings.open);
+  const closeMinutes = timeToMinutes(daySettings.close);
+  const totalMinutes = closeMinutes - openMinutes;
+  const totalHours = Math.ceil(totalMinutes / 60);
+
+  // Keep refs in sync with latest render values (must be inside effect, not render body)
+  useEffect(() => {
+    openMinutesRef.current = openMinutes;
+    closeMinutesRef.current = closeMinutes;
+    totalMinutesRef.current = totalMinutes;
+    totalHoursRef.current = totalHours;
+    shiftsRef.current = shifts;
+  });
+
+  // Update "now" every 30 s for kitchen countdown (initialized from state initializer)
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Global mouse handlers — set up once, reads current values via refs
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const pixelsPerMin = (totalHoursRef.current * CELL_WIDTH) / totalMinutesRef.current;
+      const deltaX = e.clientX - dragRef.current.startX;
+      if (Math.abs(deltaX) > 5) hasMoved.current = true;
+      const deltaMins = Math.round(deltaX / pixelsPerMin / SNAP_MINUTES) * SNAP_MINUTES;
+      const { type, shiftId, breakId, origStartMin, origEndMin } = dragRef.current;
+      let preview: DragPreview = null;
+
+      if (type === "shift-move") {
+        const duration = origEndMin - origStartMin;
+        const newStart = Math.max(
+          openMinutesRef.current,
+          Math.min(closeMinutesRef.current - duration, origStartMin + deltaMins)
+        );
+        preview = { shiftId, newStartMin: newStart, newEndMin: newStart + duration };
+      } else if (type === "shift-resize") {
+        const shift = shiftsRef.current.find((s) => s.id === shiftId);
+        const minEnd = shift
+          ? Math.max(origStartMin + 30, ...shift.breaks.map((b) => timeToMinutes(b.endTime)))
+          : origStartMin + 30;
+        const newEnd = Math.max(minEnd, Math.min(closeMinutesRef.current, origEndMin + deltaMins));
+        preview = { shiftId, newStartMin: origStartMin, newEndMin: newEnd };
+      } else if (type === "break-move") {
+        const shift = shiftsRef.current.find((s) => s.id === shiftId);
+        if (!shift) return;
+        const shiftStartMin = timeToMinutes(shift.startTime);
+        const shiftEndMin = timeToMinutes(shift.endTime);
+        const duration = origEndMin - origStartMin;
+        const newStart = Math.max(shiftStartMin, Math.min(shiftEndMin - duration, origStartMin + deltaMins));
+        preview = { shiftId, breakId, newStartMin: newStart, newEndMin: newStart + duration };
+      }
+
+      if (preview) {
+        dragPreviewRef.current = preview;
+        setDragPreview(preview);
+      }
+    };
+
+    const onMouseUp = () => {
+      if (!dragRef.current) return;
+      const drag = dragRef.current;
+      const preview = dragPreviewRef.current;
+
+      if (preview && hasMoved.current) {
+        if (drag.type === "shift-move" || drag.type === "shift-resize") {
+          const shift = shiftsRef.current.find((s) => s.id === drag.shiftId);
+          if (shift) {
+            dispatch({
+              type: "UPDATE_SHIFT",
+              payload: {
+                ...shift,
+                startTime: minutesToTime(preview.newStartMin),
+                endTime: minutesToTime(preview.newEndMin),
+              },
+            });
+          }
+        } else if (drag.type === "break-move") {
+          const shift = shiftsRef.current.find((s) => s.id === drag.shiftId);
+          const brk = shift?.breaks.find((b) => b.id === drag.breakId);
+          if (shift && brk) {
+            dispatch({
+              type: "UPDATE_BREAK",
+              payload: {
+                shiftId: shift.id,
+                brk: {
+                  ...brk,
+                  startTime: minutesToTime(preview.newStartMin),
+                  endTime: minutesToTime(preview.newEndMin),
+                },
+              },
+            });
+          }
+        }
+      }
+
+      dragRef.current = null;
+      dragPreviewRef.current = null;
+      setDragPreview(null);
+      setTimeout(() => { hasMoved.current = false; }, 0);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [dispatch]);
 
   if (!daySettings.enabled) {
     return (
@@ -45,19 +186,118 @@ export default function SchedulerView() {
     );
   }
 
-  const openMinutes = timeToMinutes(daySettings.open);
-  const closeMinutes = timeToMinutes(daySettings.close);
-  const totalMinutes = closeMinutes - openMinutes;
-  const totalHours = Math.ceil(totalMinutes / 60);
-
   const hours: string[] = [];
   for (let m = openMinutes; m <= closeMinutes; m += 60) {
     hours.push(minutesToTime(m));
   }
 
   const dayShifts = shifts.filter((s) => s.day === selectedDay);
-
   const filteredStaff = roleFilter === "All" ? staff : staff.filter((s) => s.role === roleFilter);
+
+  // --- Drag starter handlers ---
+  const startShiftMove = (e: React.MouseEvent, shift: Shift) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hasMoved.current = false;
+    dragRef.current = {
+      type: "shift-move",
+      shiftId: shift.id,
+      startX: e.clientX,
+      origStartMin: timeToMinutes(shift.startTime),
+      origEndMin: timeToMinutes(shift.endTime),
+    };
+  };
+
+  const startShiftResize = (e: React.MouseEvent, shift: Shift) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hasMoved.current = false;
+    dragRef.current = {
+      type: "shift-resize",
+      shiftId: shift.id,
+      startX: e.clientX,
+      origStartMin: timeToMinutes(shift.startTime),
+      origEndMin: timeToMinutes(shift.endTime),
+    };
+  };
+
+  const startBreakMove = (e: React.MouseEvent, shift: Shift, brk: Break) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hasMoved.current = false;
+    dragRef.current = {
+      type: "break-move",
+      shiftId: shift.id,
+      breakId: brk.id,
+      startX: e.clientX,
+      origStartMin: timeToMinutes(brk.startTime),
+      origEndMin: timeToMinutes(brk.endTime),
+    };
+  };
+
+  // --- Effective position helpers (override stored times with drag preview) ---
+  const getEffectiveShiftTimes = (shift: Shift) => {
+    if (dragPreview && dragPreview.shiftId === shift.id && !dragPreview.breakId) {
+      return { startMin: dragPreview.newStartMin, endMin: dragPreview.newEndMin };
+    }
+    return { startMin: timeToMinutes(shift.startTime), endMin: timeToMinutes(shift.endTime) };
+  };
+
+  const getEffectiveBreakTimes = (shift: Shift, brk: Break) => {
+    if (dragPreview && dragPreview.shiftId === shift.id && dragPreview.breakId === brk.id) {
+      return { brkStartMin: dragPreview.newStartMin, brkEndMin: dragPreview.newEndMin };
+    }
+    return { brkStartMin: timeToMinutes(brk.startTime), brkEndMin: timeToMinutes(brk.endTime) };
+  };
+
+  // --- Kitchen countdown ---
+  const jsDayToIndex = (d: number) => (d === 0 ? 6 : d - 1);
+  const todayName = DAYS[jsDayToIndex(now.getDay())];
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  let kitchenStatus: { label: string; color: string } | null = null;
+  if (todayName === selectedDay) {
+    if (nowMinutes < openMinutes) {
+      const diff = openMinutes - nowMinutes;
+      const h = Math.floor(diff / 60);
+      const m = diff % 60;
+      kitchenStatus = {
+        label: `Opens in ${h > 0 ? `${h}h ` : ""}${m}m`,
+        color: "text-amber-700 bg-amber-50 border-amber-200",
+      };
+    } else if (nowMinutes < closeMinutes) {
+      const diff = closeMinutes - nowMinutes;
+      const h = Math.floor(diff / 60);
+      const m = diff % 60;
+      kitchenStatus = {
+        label: `Open · closes in ${h > 0 ? `${h}h ` : ""}${m}m`,
+        color: "text-green-700 bg-green-50 border-green-200",
+      };
+    } else {
+      kitchenStatus = { label: "Closed for today", color: "text-gray-500 bg-gray-100 border-gray-200" };
+    }
+  }
+
+  // --- Copy to all days ---
+  const copyToAllDays = () => {
+    const sourceDayShifts = shifts.filter((s) => s.day === selectedDay);
+    if (sourceDayShifts.length === 0) {
+      alert("No shifts on this day to copy.");
+      return;
+    }
+    const targetDays = DAYS.filter((d) => d !== selectedDay && kitchenSettings[d]?.enabled);
+    if (targetDays.length === 0) {
+      alert("No other open days to copy to.");
+      return;
+    }
+    if (
+      !confirm(
+        `Copy all shifts from ${selectedDay} to ${targetDays.join(", ")}?\nThis will replace any existing shifts on those days.`
+      )
+    )
+      return;
+    dispatch({ type: "COPY_DAY", payload: { targetDays, sourceShifts: sourceDayShifts } });
+  };
 
   // Validation warnings
   const warningsSet = new Set<string>();
@@ -213,10 +453,16 @@ export default function SchedulerView() {
       )}
 
       <div className="flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-500">
-            Kitchen hours: {formatTime(daySettings.open)} – {formatTime(daySettings.close)}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm text-gray-500 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5" />
+            {formatTime(daySettings.open)} – {formatTime(daySettings.close)}
           </span>
+          {kitchenStatus && (
+            <span className={`text-xs font-medium px-2 py-1 rounded-full border ${kitchenStatus.color}`}>
+              {kitchenStatus.label}
+            </span>
+          )}
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-600 font-medium">Filter:</label>
             <select
@@ -231,14 +477,26 @@ export default function SchedulerView() {
             </select>
           </div>
         </div>
-        <Button
-          size="sm"
-          onClick={() => openAddShift()}
-          disabled={staff.length === 0}
-          className="gap-2"
-        >
-          <Plus className="w-4 h-4" /> Add Shift
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={copyToAllDays}
+            disabled={staff.length === 0 || dayShifts.length === 0}
+            className="gap-2"
+            title="Copy this day's shifts to all other open days"
+          >
+            <Copy className="w-4 h-4" /> Copy to All Days
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => openAddShift()}
+            disabled={staff.length === 0}
+            className="gap-2"
+          >
+            <Plus className="w-4 h-4" /> Add Shift
+          </Button>
+        </div>
       </div>
 
       {staff.length === 0 && (
@@ -250,7 +508,7 @@ export default function SchedulerView() {
       )}
 
       {staff.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-xl border bg-white shadow-sm select-none">
           <div
             className="flex border-b bg-gray-50 sticky top-0 z-10"
             style={{ minWidth: 160 + totalHours * CELL_WIDTH }}
@@ -314,6 +572,7 @@ export default function SchedulerView() {
                   className="relative cursor-pointer"
                   style={{ width: totalHours * CELL_WIDTH }}
                   onClick={(e) => {
+                    if (hasMoved.current) return;
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
                     const fraction = x / (totalHours * CELL_WIDTH);
@@ -332,47 +591,60 @@ export default function SchedulerView() {
                   ))}
 
                   {memberShifts.map((shift) => {
-                    const shiftStartM = timeToMinutes(shift.startTime);
-                    const shiftEndM = timeToMinutes(shift.endTime);
-                    const left = ((shiftStartM - openMinutes) / totalMinutes) * (totalHours * CELL_WIDTH);
-                    const width = ((shiftEndM - shiftStartM) / totalMinutes) * (totalHours * CELL_WIDTH);
-                    const shiftDuration = shiftEndM - shiftStartM;
+                    const { startMin: effStart, endMin: effEnd } = getEffectiveShiftTimes(shift);
+                    const left = ((effStart - openMinutes) / totalMinutes) * (totalHours * CELL_WIDTH);
+                    const width = ((effEnd - effStart) / totalMinutes) * (totalHours * CELL_WIDTH);
+                    const effDuration = effEnd - effStart;
+                    const isThisBeingDragged =
+                      dragPreview?.shiftId === shift.id && !dragPreview?.breakId;
 
                     return (
                       <div
                         key={shift.id}
-                        className="absolute top-2 bottom-2 rounded-lg overflow-hidden shadow-sm cursor-pointer"
-                        style={{ left, width, backgroundColor: member.color }}
+                        className={`absolute top-2 bottom-2 rounded-lg overflow-hidden shadow-sm ${
+                          isThisBeingDragged ? "opacity-90 shadow-lg" : ""
+                        }`}
+                        style={{ left, width, backgroundColor: member.color, cursor: "grab" }}
+                        onMouseDown={(e) => startShiftMove(e, shift)}
                         onClick={(e) => {
                           e.stopPropagation();
-                          openEditShift(shift);
+                          if (!hasMoved.current) openEditShift(shift);
                         }}
-                        title={`${member.name}: ${formatTime(shift.startTime)} – ${formatTime(shift.endTime)}`}
+                        title={`${member.name}: ${formatTime(shift.startTime)} – ${formatTime(shift.endTime)}\nDrag to move · Drag right edge to resize`}
                       >
                         {shift.breaks.map((brk) => {
-                          const brkStartM = timeToMinutes(brk.startTime);
-                          const brkEndM = timeToMinutes(brk.endTime);
-                          const bLeft = ((brkStartM - shiftStartM) / shiftDuration) * 100;
-                          const bWidth = ((brkEndM - brkStartM) / shiftDuration) * 100;
+                          const { brkStartMin, brkEndMin } = getEffectiveBreakTimes(shift, brk);
+                          const bLeft = ((brkStartMin - effStart) / effDuration) * 100;
+                          const bWidth = ((brkEndMin - brkStartMin) / effDuration) * 100;
                           return (
                             <div
                               key={brk.id}
-                              className="absolute inset-y-0 bg-white/50 border-x border-dashed border-white/80 flex items-center justify-center z-10"
+                              className="absolute inset-y-0 bg-white/50 border-x border-dashed border-white/80 flex items-center justify-center z-10 cursor-grab"
                               style={{ left: `${bLeft}%`, width: `${bWidth}%` }}
+                              onMouseDown={(e) => startBreakMove(e, shift, brk)}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openEditBreak(shift.id, brk);
+                                if (!hasMoved.current) openEditBreak(shift.id, brk);
                               }}
-                              title={`Break: ${formatTime(brk.startTime)} – ${formatTime(brk.endTime)}`}
+                              title={`Break: ${formatTime(brk.startTime)} – ${formatTime(brk.endTime)}\nDrag to reposition`}
                             >
-                              <Coffee className="w-3 h-3 text-gray-600 opacity-70" />
+                              <Coffee className="w-3 h-3 text-gray-600 opacity-70 pointer-events-none" />
                             </div>
                           );
                         })}
                         <div className="absolute inset-0 px-2 flex items-center z-20 pointer-events-none">
                           <div className="text-white text-xs font-medium drop-shadow-sm truncate">
-                            {formatTime(shift.startTime)} – {formatTime(shift.endTime)}
+                            {formatTime(minutesToTime(effStart))} – {formatTime(minutesToTime(effEnd))}
                           </div>
+                        </div>
+                        {/* Resize handle */}
+                        <div
+                          className="absolute top-0 right-0 bottom-0 w-3 z-30 flex items-center justify-center cursor-ew-resize"
+                          onMouseDown={(e) => startShiftResize(e, shift)}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Drag to resize"
+                        >
+                          <div className="w-0.5 h-4 bg-white/70 rounded-full" />
                         </div>
                       </div>
                     );
@@ -388,6 +660,12 @@ export default function SchedulerView() {
             </div>
           )}
         </div>
+      )}
+
+      {staff.length > 0 && dayShifts.length > 0 && (
+        <p className="text-xs text-gray-400 text-center">
+          Drag shifts to move · Drag right edge ▐ to resize · Drag ☕ break to reposition
+        </p>
       )}
 
       <Dialog open={shiftDialog.open} onOpenChange={(o) => !o && setShiftDialog({ open: false })}>

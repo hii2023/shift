@@ -4,6 +4,7 @@ import { CalendarDays, Users, Settings } from "lucide-react";
 import SchedulerView from "@/components/SchedulerView";
 import StaffView from "@/components/StaffView";
 import SettingsView from "@/components/SettingsView";
+import LiveClock from "@/components/LiveClock";
 
 export default function Home() {
   return (
@@ -15,6 +16,9 @@ export default function Home() {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Kitchen Scheduler</h1>
           <p className="text-xs text-gray-500">Cloud Kitchen Shift Management</p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <LiveClock />
         </div>
       </header>
       <main className="px-6 py-6">
@@ -38,3 +42,4 @@ export default function Home() {
     </div>
   );
 }
+
