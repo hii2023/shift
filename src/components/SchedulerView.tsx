@@ -452,8 +452,8 @@ export default function SchedulerView() {
         </Alert>
       )}
 
-      <div className="flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-gray-500 flex items-center gap-1">
             <Clock className="w-3.5 h-3.5" />
             {formatTime(daySettings.open)} – {formatTime(daySettings.close)}
@@ -468,7 +468,7 @@ export default function SchedulerView() {
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="border rounded px-2 py-1 text-sm"
+              className="border rounded px-2 py-1.5 text-sm"
             >
               <option value="All">All Roles</option>
               <option value="Chef">Chef</option>
@@ -483,18 +483,21 @@ export default function SchedulerView() {
             variant="outline"
             onClick={copyToAllDays}
             disabled={staff.length === 0 || dayShifts.length === 0}
-            className="gap-2"
+            className="gap-1.5"
             title="Copy this day's shifts to all other open days"
           >
-            <Copy className="w-4 h-4" /> Copy to All Days
+            <Copy className="w-4 h-4" />
+            <span className="hidden xs:inline sm:hidden lg:inline">Copy to All Days</span>
+            <span className="xs:hidden sm:inline lg:hidden">Copy All</span>
           </Button>
           <Button
             size="sm"
             onClick={() => openAddShift()}
             disabled={staff.length === 0}
-            className="gap-2"
+            className="gap-1.5"
           >
-            <Plus className="w-4 h-4" /> Add Shift
+            <Plus className="w-4 h-4" />
+            <span>Add Shift</span>
           </Button>
         </div>
       </div>
@@ -847,14 +850,14 @@ function DayTabs({
   settings: KitchenSettings;
 }) {
   return (
-    <div className="flex gap-2 flex-wrap">
+    <div className="flex gap-1.5 sm:gap-2 flex-wrap">
       {DAYS.map((day) => {
         const s = settings[day] || { enabled: true };
         return (
           <button
             key={day}
             onClick={() => onSelect(day)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors min-w-[2.75rem] sm:min-w-0 ${
               selected === day
                 ? "bg-indigo-600 text-white shadow-sm"
                 : s.enabled
@@ -863,7 +866,7 @@ function DayTabs({
             }`}
           >
             {day}
-            {!s.enabled && <span className="ml-1 text-xs">(closed)</span>}
+            {!s.enabled && <span className="ml-0.5 text-xs hidden sm:inline">(closed)</span>}
           </button>
         );
       })}

@@ -11,7 +11,8 @@ A visual, web-based shift scheduling tool for cloud kitchens. Built with Next.js
 - **Smart Validation** — Warnings for missing chef coverage and all-staff-on-break scenarios.
 - **Role Filter** — Filter the scheduler view by role (Chef, Support Staff, Other).
 - **Staff Count** — Per-hour staff count displayed in the timeline header.
-- **Persistence** — All data stored in browser localStorage.
+- **Cloud Sync** — Auto-saves to a private GitHub Gist so your schedule is available on any device.
+- **Mobile-friendly** — Responsive layout that works on phones and tablets.
 
 ## Getting Started
 
@@ -29,9 +30,27 @@ npm run build
 npm start
 ```
 
-## Deploy on Vercel
+## Deploy on Vercel (GitHub Hosted)
 
-Push to GitHub and import the repository on [Vercel](https://vercel.com). No additional configuration needed.
+1. Push this repository to GitHub (already done).
+2. Go to [vercel.com](https://vercel.com) → **Add New Project** → import the `shift` repo.
+3. Accept the defaults — Vercel auto-detects Next.js.
+4. Click **Deploy**. Every push to `main` auto-deploys.
+5. Share the generated `*.vercel.app` URL with your team.
+
+## Cross-Device Sync via GitHub Gist
+
+Once the app is deployed, your data will sync automatically across all your devices:
+
+1. [Create a GitHub Personal Access Token](https://github.com/settings/tokens/new?scopes=gist&description=Kitchen+Scheduler) with the **`gist`** scope.
+2. In the app, open **Settings → Cloud Sync**.
+3. Paste your token and click **Connect**.
+   - The app creates a private GitHub Gist and saves your schedule there.
+4. On any other device, open the app, go to **Settings → Cloud Sync**, and enter the **same token**.
+   - The app finds your existing Gist and loads the data automatically.
+5. Every change you make is auto-saved to the Gist within a few seconds.
+
+> Your token is stored only in your browser's localStorage and is sent directly to GitHub's API — it is never shared with any third party.
 
 ## Tech Stack
 
