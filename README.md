@@ -1,18 +1,35 @@
-# Kitchen Shift Scheduler
+# Shift — Kitchen Shift Scheduler
 
-A visual, web-based shift scheduling tool for cloud kitchens. Built with Next.js 16, Tailwind CSS, and shadcn/ui.
+A visual, web-based **shift scheduling tool** built for cloud kitchen managers. Plan staff shifts, manage breaks, and validate coverage — all from an interactive timeline grid.
 
-## Features
+## What It Does
 
-- **Scheduler** — Interactive timeline grid showing all staff shifts per day. Click any row to add a shift, click a shift block to edit it.
-- **Staff Management** — Add/edit/delete staff with name, role (Chef / Support Staff / Other), and custom tags.
-- **Kitchen Settings** — Configure open/close times for each day of the week (Mon–Sun), with ability to mark days as closed.
-- **Break Management** — Add one or more breaks within a shift. Breaks appear as a lighter segment on the shift bar.
-- **Smart Validation** — Warnings for missing chef coverage and all-staff-on-break scenarios.
-- **Role Filter** — Filter the scheduler view by role (Chef, Support Staff, Other).
-- **Staff Count** — Per-hour staff count displayed in the timeline header.
-- **Cloud Sync** — Auto-saves to a private GitHub Gist so your schedule is available on any device.
-- **Mobile-friendly** — Responsive layout that works on phones and tablets.
+Replaces spreadsheet-based shift planning with a real-time timeline UI. Managers drag, click, and configure shifts per staff member, with built-in validation that catches coverage gaps before they happen.
+
+## Key Features
+
+- **Interactive timeline grid** — click any row/block to add or edit a shift
+- **Staff management** — Chef, Support Staff, Other roles with custom tags
+- **Configurable kitchen hours** — set open/close times per day of week
+- **Multiple breaks per shift** — accurately reflect real kitchen schedules
+- **Smart validation warnings** — alerts for missing chef on shift or all staff on break simultaneously
+- **Role filter** — focus on specific staff types in the timeline
+- **Per-hour staff count** — header shows staffing levels across the day
+- **Cloud sync via GitHub Gist** — save and load schedules using a personal access token (no server needed)
+- **Mobile-responsive layout** — works on tablets and phones
+
+## Tech Stack
+
+| Technology | Purpose |
+|------------|---------|
+| Next.js 16 (App Router) | Framework |
+| React 19 | UI |
+| TypeScript | Type safety |
+| Tailwind CSS v4 | Styling |
+| shadcn/ui + Radix UI | Components |
+| dnd-kit | Drag and drop |
+| date-fns | Date utilities |
+| Lucide React | Icons |
 
 ## Getting Started
 
@@ -21,42 +38,8 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Configure your GitHub Gist token in settings for cloud sync.
 
-## Build
+## Audience
 
-```bash
-npm run build
-npm start
-```
-
-## Deploy on Vercel (GitHub Hosted)
-
-1. Push this repository to GitHub (already done).
-2. Go to [vercel.com](https://vercel.com) → **Add New Project** → import the `shift` repo.
-3. Accept the defaults — Vercel auto-detects Next.js.
-4. Click **Deploy**. Every push to `main` auto-deploys.
-5. Share the generated `*.vercel.app` URL with your team.
-
-## Cross-Device Sync via GitHub Gist
-
-Once the app is deployed, your data will sync automatically across all your devices:
-
-1. [Create a GitHub Personal Access Token](https://github.com/settings/tokens/new?scopes=gist&description=Kitchen+Scheduler) with the **`gist`** scope.
-2. In the app, open **Settings → Cloud Sync**.
-3. Paste your token and click **Connect**.
-   - The app creates a private GitHub Gist and saves your schedule there.
-4. On any other device, open the app, go to **Settings → Cloud Sync**, and enter the **same token**.
-   - The app finds your existing Gist and loads the data automatically.
-5. Every change you make is auto-saved to the Gist within a few seconds.
-
-> Your token is stored only in your browser's localStorage and is sent directly to GitHub's API — it is never shared with any third party.
-
-## Tech Stack
-
-- [Next.js 16](https://nextjs.org) (App Router, TypeScript)
-- [Tailwind CSS v4](https://tailwindcss.com)
-- [shadcn/ui](https://ui.shadcn.com)
-- [Radix UI](https://radix-ui.com)
-- [Lucide React](https://lucide.dev)
-- [dnd-kit](https://dndkit.com) (installed for future drag-and-drop enhancements)
+Cloud kitchen managers and NOSH7 operations team scheduling daily staff shifts.
